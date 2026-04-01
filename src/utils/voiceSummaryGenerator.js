@@ -55,9 +55,9 @@ function generateVoiceSummary(match, targetPlayer) {
   // Opening - result announcement
   const playerName = target?.name || targetPlayer;
   if (won) {
-    voice += `${playerName}的瓦罗兰特对局刚刚结束，大胜而归！${teamScore}比${enemyScore}，在${mapName}取得胜利。`;
+    voice += `${playerName}的瓦罗兰特对局刚刚结束，他们大胜而归！${teamScore}比${enemyScore}，在${mapName}取得胜利。`;
   } else {
-    voice += `${playerName}的瓦罗兰特对局刚刚结束，被打的屁滚尿流。${teamScore}比${enemyScore}惜败于${mapName}。`;
+    voice += `${playerName}的瓦罗兰特对局刚刚结束，他们被打的屁滚尿流。${teamScore}比${enemyScore}惜败于${mapName}。`;
   }
 
   // MVP highlight
