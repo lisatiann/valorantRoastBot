@@ -6,8 +6,8 @@ const util = require('util');
 
 const execPromise = util.promisify(exec);
 
-// Path to edge-tts CLI (installed via pip3)
-const EDGE_TTS_PATH = '/Users/lisaespresso/Library/Python/3.14/bin/edge-tts';
+// Path to edge-tts CLI - use env var for production, fallback for local dev
+const EDGE_TTS_PATH = process.env.EDGE_TTS_PATH || '/Users/lisaespresso/Library/Python/3.14/bin/edge-tts';
 
 // Chinese voice options
 const VOICES = {
@@ -28,7 +28,7 @@ async function generateSpeech(text, voiceType = 'male') {
   // Escape quotes in text for shell
   const escapedText = text.replace(/"/g, '\\"');
 
-  const command = `"${EDGE_TTS_PATH}" --voice "${voice}" --rate=+30% --text "${escapedText}" --write-media "${tempFile}"`;
+  const command = `"${EDGE_TTS_PATH}" --voice "${voice}" --rate=+20% --text "${escapedText}" --write-media "${tempFile}"`;
 
   try {
     await execPromise(command);

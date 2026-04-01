@@ -1,20 +1,18 @@
 const { rankPlayers } = require('./scoring');
 const {
-  AGENT_NAMES,
   getAgentName,
   MAP_NAMES,
-  TOP_FRAG_PRAISES,
-  BOTTOM_FRAG_ROASTS,
-  randomItem,
 } = require('./summaryGenerator');
 
 /**
  * Generate a short voice summary for TTS
  * @param {Object} match - Match data from API
  * @param {string} targetPlayer - Name of the player we're focusing on
+ * @param {string} selectedPraise - Pre-selected praise to use (must match text summary)
+ * @param {string} selectedRoast - Pre-selected roast to use (must match text summary)
  * @returns {string} Short Chinese summary for voice
  */
-function generateVoiceSummary(match, targetPlayer) {
+function generateVoiceSummary(match, targetPlayer, selectedPraise, selectedRoast) {
   const metadata = match.metadata || {};
   const players = match.players?.all_players || [];
   const teams = match.teams || {};
@@ -63,13 +61,13 @@ function generateVoiceSummary(match, targetPlayer) {
   // MVP highlight
   const mvpKills = mvp.stats?.kills || 0;
   const mvpAgent = getAgentName(mvp.agent);
-  voice += `本局上等马是${mvp.name}，用${mvpAgent}拿下${mvpKills}个人头。${randomItem(TOP_FRAG_PRAISES)}。`;
+  voice += `本局上等马是${mvp.name}，用${mvpAgent}拿下${mvpKills}个人头。${selectedPraise}。`;
 
   // Bottom frag roast
   const bottomKills = bottomFrag.stats?.kills || 0;
   const bottomDeaths = bottomFrag.stats?.deaths || 0;
   const bottomAgent = getAgentName(bottomFrag.agent);
-  voice += `下等马是${bottomFrag.name}，用${bottomAgent}只拿了${bottomKills}个人头，死了${bottomDeaths}次。${randomItem(BOTTOM_FRAG_ROASTS)}`;
+  voice += `销冠是${bottomFrag.name}，用${bottomAgent}只拿了${bottomKills}个人头，死了${bottomDeaths}次。${selectedRoast}`;
 
   return voice;
 }

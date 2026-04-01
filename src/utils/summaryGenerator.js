@@ -26,6 +26,11 @@ const BOTTOM_FRAG_ROASTS = [
   '恭喜你成功让四个队友团结起来骂你',
   '你这KD比我的银行卡余额还惨',
   '你不是菜，你是整个菜市场',
+  '你妈妈必得痔疮',
+  '打了飞机枪就会打的不准',
+  '说你又不听 听你又不做 做你又不会',
+  '没有对枪机会',
+  '这里是地狱吗',
 ];
 
 // Praises for the top frag (上等马)
@@ -44,7 +49,7 @@ const TOP_FRAG_PRAISES = [
   '这把你是故意让着队友对吧？不然更夸张',
   '你是队友的亲妈妈，每局都在养家',
   '你这操作，敌人死的时候肯定在骂娘',
-  '巨tm牛逼，没别的说的',
+  '巨他妈牛逼，没别的说的',
   '质感公司感谢你',
 ];
 
@@ -65,33 +70,33 @@ const MAP_NAMES = {
 
 // Funny/trendy Chinese agent names
 const AGENT_NAMES = {
-  'Jett': '风骚韩国女人',
+  'Jett': '银针扎牛子',
   'Phoenix': '火男（韩只会打火男）',
-  'Sage': '双C cup 奶妈',
-  'Sova': '俄国大叔',
+  'Sage': '学医救不了队友',
+  'Sova': 'ray国大叔',
   'Viper': '猴一奥',
   'Cypher': '偷窥狂',
-  'Brimstone': '硫磺队长',
+  'Brimstone': '边导边烟',
   'Omen': '阴道人老龙',
-  'Breach': '壮汉',
-  'Raze': '炸逼',
+  'Breach': '震男',
+  'Raze': '跳蛋妹',
   'Reyna': '吸血鬼小憨憨',
-  'Killjoy': '德国工程师',
+  'Killjoy': '鸡女',
   'Skye': '澳洲狗妈',
   'Yoru': '日本混混',
   'Astra': '宇宙大脑',
   'KAY/O': '机器人',
-  'Chamber': '商总',
+  'Chamber': '法国Henry',
   'Neon': '电耗子',
-  'Fade': '土耳其恶女',
+  'Fade': 'Viper你前点开狗',
   'Harbor': '水男',
   'Gekko': '宠物男',
-  'Deadlock': '捕兽夹',
-  'Iso': '中国帅哥',
-  'Clove': '苏格兰人',
-  'Vyse': '机械女',
-  'Tejo': '炮弹哥',
-  'Waylay': '陷阱哥',
+  'Deadlock': '绳索艺术家',
+  'Iso': '极品男睾',
+  'Clove': '蝶女',
+  'Vyse': '皮衣sm魔人',
+  'Tejo': '墨西哥Henry',
+  'Waylay': '5秒已经很棒了',
 };
 
 /**
@@ -184,13 +189,17 @@ function generateSummary(match, targetPlayer) {
     summary += `\n`;
   }
 
+  // Select random roast/praise
+  const selectedPraise = randomItem(TOP_FRAG_PRAISES);
+  const selectedRoast = randomItem(BOTTOM_FRAG_ROASTS);
+
   // Roast/Praise section
   summary += `━━━━━━━━━━━━━━━━━━━━\n`;
   summary += `💬 点评\n`;
-  summary += `🏆 ${mvp.name}: ${randomItem(TOP_FRAG_PRAISES)}\n`;
-  summary += `💩 ${bottomFrag.name}: ${randomItem(BOTTOM_FRAG_ROASTS)}\n`;
+  summary += `🏆 ${mvp.name}: ${selectedPraise}\n`;
+  summary += `💩 ${bottomFrag.name}: ${selectedRoast}\n`;
 
-  return summary;
+  return { summary, selectedPraise, selectedRoast };
 }
 
 module.exports = {
