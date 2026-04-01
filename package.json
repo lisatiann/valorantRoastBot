@@ -1,0 +1,19 @@
+{
+  "name": "valorantsummaryroast",
+  "version": "1.0.0",
+  "description": "Discord bot for Valorant game summaries and roasts",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.19.2",
+    "axios": "^1.14.0",
+    "discord.js": "^14.26.0",
+    "dotenv": "^17.3.1"
+  }
+}
