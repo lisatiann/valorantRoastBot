@@ -133,6 +133,7 @@ client.on('messageCreate', async (message) => {
 
           player.on(AudioPlayerStatus.Idle, () => {
             cleanupAudioFile(audioPath);
+            connection.destroy();
           });
 
           player.on('error', (error) => {

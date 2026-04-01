@@ -11,7 +11,7 @@ const EDGE_TTS_PATH = '/Users/lisaespresso/Library/Python/3.14/bin/edge-tts';
 
 // Chinese voice options
 const VOICES = {
-  male: 'zh-CN-YunxiNeural',
+  male: 'zh-CN-YunjianNeural',
   female: 'zh-CN-XiaoxiaoNeural',
 };
 
@@ -28,7 +28,7 @@ async function generateSpeech(text, voiceType = 'male') {
   // Escape quotes in text for shell
   const escapedText = text.replace(/"/g, '\\"');
 
-  const command = `"${EDGE_TTS_PATH}" --voice "${voice}" --text "${escapedText}" --write-media "${tempFile}"`;
+  const command = `"${EDGE_TTS_PATH}" --voice "${voice}" --rate=+30% --text "${escapedText}" --write-media "${tempFile}"`;
 
   try {
     await execPromise(command);
