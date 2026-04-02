@@ -3,6 +3,8 @@ const { createClient } = require('redis');
 // Redis client - will be initialized on first use
 let redisClient = null;
 let isConnected = false;
+let connectionAttempted = false;
+let errorLogged = false;
 
 // In-memory cache for when Redis is unavailable (development fallback)
 let memoryCache = {
@@ -10,22 +12,37 @@ let memoryCache = {
 };
 
 async function getClient() {
+  // Already connected
   if (redisClient && isConnected) {
     return redisClient;
+  }
+
+  // Already tried and failed - use memory fallback silently
+  if (connectionAttempted && !isConnected) {
+    return null;
   }
 
   const redisUrl = process.env.REDIS_URL;
 
   if (!redisUrl) {
-    console.warn('REDIS_URL not set, using in-memory storage (data will not persist)');
+    if (!errorLogged) {
+      console.log('REDIS_URL not set, using in-memory storage (data will not persist across restarts)');
+      errorLogged = true;
+    }
     return null;
   }
+
+  connectionAttempted = true;
 
   try {
     redisClient = createClient({ url: redisUrl });
 
+    // Only log errors once
     redisClient.on('error', (err) => {
-      console.error('Redis Client Error:', err);
+      if (!errorLogged) {
+        console.warn('Redis unavailable, using in-memory fallback:', err.code || err.message);
+        errorLogged = true;
+      }
       isConnected = false;
     });
 
@@ -37,7 +54,10 @@ async function getClient() {
     await redisClient.connect();
     return redisClient;
   } catch (error) {
-    console.error('Failed to connect to Redis:', error);
+    if (!errorLogged) {
+      console.warn('Redis unavailable, using in-memory fallback:', error.code || error.message);
+      errorLogged = true;
+    }
     return null;
   }
 }
@@ -55,7 +75,8 @@ async function loadData() {
       return JSON.parse(data);
     }
   } catch (error) {
-    console.error('Failed to load data from Redis:', error);
+    console.error('Failed to load data from Redis:', error.message);
+    return { ...memoryCache };
   }
 
   return { guilds: {} };
@@ -73,7 +94,9 @@ async function saveData(data) {
   try {
     await client.set('valorant_bot_data', JSON.stringify(data));
   } catch (error) {
-    console.error('Failed to save data to Redis:', error);
+    console.error('Failed to save data to Redis:', error.message);
+    // Also save to memory as backup
+    memoryCache = { ...data };
   }
 }
 
