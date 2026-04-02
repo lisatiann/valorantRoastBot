@@ -1,38 +1,79 @@
-const fs = require('fs');
-const path = require('path');
+const { createClient } = require('redis');
 
-const DATA_FILE = path.join(__dirname, '../../data/bindings.json');
+// Redis client - will be initialized on first use
+let redisClient = null;
+let isConnected = false;
 
-const defaultData = {
-  guilds: {}, // guildId -> { reportChannelId, boundPlayers: [...] }
+// In-memory cache for when Redis is unavailable (development fallback)
+let memoryCache = {
+  guilds: {},
 };
 
-function ensureDataDir() {
-  const dir = path.dirname(DATA_FILE);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+async function getClient() {
+  if (redisClient && isConnected) {
+    return redisClient;
+  }
+
+  const redisUrl = process.env.REDIS_URL;
+
+  if (!redisUrl) {
+    console.warn('REDIS_URL not set, using in-memory storage (data will not persist)');
+    return null;
+  }
+
+  try {
+    redisClient = createClient({ url: redisUrl });
+
+    redisClient.on('error', (err) => {
+      console.error('Redis Client Error:', err);
+      isConnected = false;
+    });
+
+    redisClient.on('connect', () => {
+      console.log('Connected to Redis');
+      isConnected = true;
+    });
+
+    await redisClient.connect();
+    return redisClient;
+  } catch (error) {
+    console.error('Failed to connect to Redis:', error);
+    return null;
   }
 }
 
-function loadData() {
-  ensureDataDir();
+async function loadData() {
+  const client = await getClient();
+
+  if (!client) {
+    return { ...memoryCache };
+  }
+
   try {
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, 'utf8');
-      return { ...defaultData, ...JSON.parse(raw) };
+    const data = await client.get('valorant_bot_data');
+    if (data) {
+      return JSON.parse(data);
     }
   } catch (error) {
-    console.error('Failed to load data:', error);
+    console.error('Failed to load data from Redis:', error);
   }
-  return { ...defaultData };
+
+  return { guilds: {} };
 }
 
-function saveData(data) {
-  ensureDataDir();
+async function saveData(data) {
+  const client = await getClient();
+
+  if (!client) {
+    // Fallback to memory
+    memoryCache = { ...data };
+    return;
+  }
+
   try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    await client.set('valorant_bot_data', JSON.stringify(data));
   } catch (error) {
-    console.error('Failed to save data:', error);
+    console.error('Failed to save data to Redis:', error);
   }
 }
 
@@ -46,8 +87,8 @@ function ensureGuild(data, guildId) {
   return data.guilds[guildId];
 }
 
-function addBoundPlayer(guildId, name, tag, region, discordUserId) {
-  const data = loadData();
+async function addBoundPlayer(guildId, name, tag, region, discordUserId) {
+  const data = await loadData();
   const guild = ensureGuild(data, guildId);
 
   const existing = guild.boundPlayers.find(
@@ -57,12 +98,12 @@ function addBoundPlayer(guildId, name, tag, region, discordUserId) {
     return false; // Already bound
   }
   guild.boundPlayers.push({ name, tag, region, discordUserId, lastMatchId: null });
-  saveData(data);
+  await saveData(data);
   return true;
 }
 
-function removeBoundPlayer(guildId, name, tag) {
-  const data = loadData();
+async function removeBoundPlayer(guildId, name, tag) {
+  const data = await loadData();
   const guild = ensureGuild(data, guildId);
 
   const index = guild.boundPlayers.findIndex(
@@ -72,12 +113,12 @@ function removeBoundPlayer(guildId, name, tag) {
     return false; // Not found
   }
   guild.boundPlayers.splice(index, 1);
-  saveData(data);
+  await saveData(data);
   return true;
 }
 
-function getBoundPlayers(guildId) {
-  const data = loadData();
+async function getBoundPlayers(guildId) {
+  const data = await loadData();
   if (guildId) {
     const guild = data.guilds[guildId];
     return guild ? guild.boundPlayers : [];
@@ -92,8 +133,8 @@ function getBoundPlayers(guildId) {
   return allPlayers;
 }
 
-function updateLastMatchId(guildId, name, tag, matchId) {
-  const data = loadData();
+async function updateLastMatchId(guildId, name, tag, matchId) {
+  const data = await loadData();
   const guild = data.guilds[guildId];
   if (!guild) return;
 
@@ -102,25 +143,25 @@ function updateLastMatchId(guildId, name, tag, matchId) {
   );
   if (player) {
     player.lastMatchId = matchId;
-    saveData(data);
+    await saveData(data);
   }
 }
 
-function setReportChannel(guildId, channelId) {
-  const data = loadData();
+async function setReportChannel(guildId, channelId) {
+  const data = await loadData();
   const guild = ensureGuild(data, guildId);
   guild.reportChannelId = channelId;
-  saveData(data);
+  await saveData(data);
 }
 
-function getReportChannel(guildId) {
-  const data = loadData();
+async function getReportChannel(guildId) {
+  const data = await loadData();
   const guild = data.guilds[guildId];
   return guild ? guild.reportChannelId : null;
 }
 
-function getAllGuildsWithReportChannels() {
-  const data = loadData();
+async function getAllGuildsWithReportChannels() {
+  const data = await loadData();
   const result = [];
   for (const [guildId, guild] of Object.entries(data.guilds)) {
     if (guild.reportChannelId) {
@@ -140,4 +181,5 @@ module.exports = {
   setReportChannel,
   getReportChannel,
   getAllGuildsWithReportChannels,
+  getClient,
 };

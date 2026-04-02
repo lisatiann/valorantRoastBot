@@ -180,7 +180,7 @@ client.once('ready', () => {
 
     // Get report channel for this player's guild
     const guildId = player.guildId;
-    const channelId = dataStore.getReportChannel(guildId);
+    const channelId = await dataStore.getReportChannel(guildId);
     if (!channelId) {
       console.log(`No report channel configured for guild ${guildId}, skipping auto-report`);
       return;
@@ -211,7 +211,7 @@ client.once('ready', () => {
 });
 
 // Voice state update - auto-join when bound player joins voice
-client.on('voiceStateUpdate', (oldState, newState) => {
+client.on('voiceStateUpdate', async (oldState, newState) => {
   // Player joined a voice channel
   if (!oldState.channel && newState.channel) {
     // Don't auto-join if voice queue is currently processing (would conflict)
@@ -219,7 +219,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
       return;
     }
 
-    const boundPlayers = dataStore.getBoundPlayers(newState.guild.id);
+    const boundPlayers = await dataStore.getBoundPlayers(newState.guild.id);
     const isBoundPlayer = boundPlayers.some((p) => p.discordUserId === newState.id);
 
     if (isBoundPlayer) {
@@ -316,7 +316,7 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
-    const added = dataStore.addBoundPlayer(message.guild.id, name, tag, region, message.author.id);
+    const added = await dataStore.addBoundPlayer(message.guild.id, name, tag, region, message.author.id);
     if (added) {
       await message.reply(`已绑定玩家: ${name}#${tag} (${region})\n机器人将自动追踪该玩家的比赛。`);
     } else {
@@ -337,7 +337,7 @@ client.on('messageCreate', async (message) => {
     const name = args.slice(0, hashIndex);
     const tag = args.slice(hashIndex + 1).trim();
 
-    const removed = dataStore.removeBoundPlayer(message.guild.id, name, tag);
+    const removed = await dataStore.removeBoundPlayer(message.guild.id, name, tag);
     if (removed) {
       await message.reply(`已解绑玩家: ${name}#${tag}`);
     } else {
@@ -347,14 +347,14 @@ client.on('messageCreate', async (message) => {
 
   // Set report channel command: ^setchannel
   if (message.content === '^setchannel') {
-    dataStore.setReportChannel(message.guild.id, message.channel.id);
+    await dataStore.setReportChannel(message.guild.id, message.channel.id);
     await message.reply(`已设置当前频道为报告频道！所有自动比赛报告将发送到这里。`);
   }
 
   // List bindings command: ^listbinds
   if (message.content === '^listbinds') {
-    const players = dataStore.getBoundPlayers(message.guild.id);
-    const channelId = dataStore.getReportChannel(message.guild.id);
+    const players = await dataStore.getBoundPlayers(message.guild.id);
+    const channelId = await dataStore.getReportChannel(message.guild.id);
 
     let response = '**当前配置:**\n\n';
 
