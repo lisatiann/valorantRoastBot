@@ -29,16 +29,23 @@ const client = new Client({
 
 // Helper: Send summary to channel and optionally voice
 async function sendMatchReport(channel, guild, match, playerName) {
+  console.log(`Generating summary for ${playerName}...`);
   const { summary, selectedPraise, selectedRoast } = generateSummary(match, playerName);
+  console.log(`Summary generated, length: ${summary.length}`);
 
   // Discord has a 2000 char limit, split if needed
-  if (summary.length > 1900) {
-    const parts = summary.match(/[\s\S]{1,1900}/g) || [];
-    for (const part of parts) {
-      await channel.send(part);
+  try {
+    if (summary.length > 1900) {
+      const parts = summary.match(/[\s\S]{1,1900}/g) || [];
+      for (const part of parts) {
+        await channel.send(part);
+      }
+    } else {
+      await channel.send(summary);
     }
-  } else {
-    await channel.send(summary);
+    console.log('Text summary sent to channel');
+  } catch (sendError) {
+    console.error('Failed to send text summary:', sendError);
   }
 
   // If bot is in voice channel, also speak the summary
