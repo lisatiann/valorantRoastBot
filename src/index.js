@@ -79,9 +79,9 @@ async function sendMatchReport(channel, guild, match, playerName) {
   }
 }
 
-// Helper: Find voice channel with bound player
+// Helper: Find voice channel with bound player in specific guild
 function findVoiceChannelWithBoundPlayer(guild) {
-  const boundPlayers = dataStore.getBoundPlayers();
+  const boundPlayers = dataStore.getBoundPlayers(guild.id);
   const boundDiscordIds = boundPlayers.map((p) => p.discordUserId).filter(Boolean);
 
   for (const [, channel] of guild.channels.cache) {
@@ -102,11 +102,13 @@ client.once('ready', () => {
 
   // Start polling for new matches
   matchPoller.startPolling(async (player, match) => {
-    console.log(`New match callback for ${player.name}#${player.tag}`);
+    console.log(`New match callback for ${player.name}#${player.tag} in guild ${player.guildId}`);
 
-    const { channelId, guildId } = dataStore.getReportChannel();
-    if (!channelId || !guildId) {
-      console.log('No report channel configured, skipping auto-report');
+    // Get report channel for this player's guild
+    const guildId = player.guildId;
+    const channelId = dataStore.getReportChannel(guildId);
+    if (!channelId) {
+      console.log(`No report channel configured for guild ${guildId}, skipping auto-report`);
       return;
     }
 
@@ -144,7 +146,7 @@ client.once('ready', () => {
 client.on('voiceStateUpdate', (oldState, newState) => {
   // Player joined a voice channel
   if (!oldState.channel && newState.channel) {
-    const boundPlayers = dataStore.getBoundPlayers();
+    const boundPlayers = dataStore.getBoundPlayers(newState.guild.id);
     const isBoundPlayer = boundPlayers.some((p) => p.discordUserId === newState.id);
 
     if (isBoundPlayer) {
@@ -220,7 +222,7 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
-    const added = dataStore.addBoundPlayer(name, tag, region, message.author.id);
+    const added = dataStore.addBoundPlayer(message.guild.id, name, tag, region, message.author.id);
     if (added) {
       await message.reply(`已绑定玩家: ${name}#${tag} (${region})\n机器人将自动追踪该玩家的比赛。`);
     } else {
@@ -241,7 +243,7 @@ client.on('messageCreate', async (message) => {
     const name = args.slice(0, hashIndex);
     const tag = args.slice(hashIndex + 1).trim();
 
-    const removed = dataStore.removeBoundPlayer(name, tag);
+    const removed = dataStore.removeBoundPlayer(message.guild.id, name, tag);
     if (removed) {
       await message.reply(`已解绑玩家: ${name}#${tag}`);
     } else {
@@ -251,14 +253,14 @@ client.on('messageCreate', async (message) => {
 
   // Set report channel command: ^setchannel
   if (message.content === '^setchannel') {
-    dataStore.setReportChannel(message.channel.id, message.guild.id);
+    dataStore.setReportChannel(message.guild.id, message.channel.id);
     await message.reply(`已设置当前频道为报告频道！所有自动比赛报告将发送到这里。`);
   }
 
   // List bindings command: ^listbinds
   if (message.content === '^listbinds') {
-    const players = dataStore.getBoundPlayers();
-    const { channelId } = dataStore.getReportChannel();
+    const players = dataStore.getBoundPlayers(message.guild.id);
+    const channelId = dataStore.getReportChannel(message.guild.id);
 
     let response = '**当前配置:**\n\n';
 

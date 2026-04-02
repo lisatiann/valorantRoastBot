@@ -4,9 +4,7 @@ const path = require('path');
 const DATA_FILE = path.join(__dirname, '../../data/bindings.json');
 
 const defaultData = {
-  boundPlayers: [], // Array of { name, tag, region, discordUserId, lastMatchId }
-  reportChannelId: null,
-  guildId: null,
+  guilds: {}, // guildId -> { reportChannelId, boundPlayers: [...] }
 };
 
 function ensureDataDir() {
@@ -38,57 +36,99 @@ function saveData(data) {
   }
 }
 
-function addBoundPlayer(name, tag, region, discordUserId) {
+function ensureGuild(data, guildId) {
+  if (!data.guilds[guildId]) {
+    data.guilds[guildId] = {
+      reportChannelId: null,
+      boundPlayers: [],
+    };
+  }
+  return data.guilds[guildId];
+}
+
+function addBoundPlayer(guildId, name, tag, region, discordUserId) {
   const data = loadData();
-  const existing = data.boundPlayers.find(
+  const guild = ensureGuild(data, guildId);
+
+  const existing = guild.boundPlayers.find(
     (p) => p.name.toLowerCase() === name.toLowerCase() && p.tag.toLowerCase() === tag.toLowerCase()
   );
   if (existing) {
     return false; // Already bound
   }
-  data.boundPlayers.push({ name, tag, region, discordUserId, lastMatchId: null });
+  guild.boundPlayers.push({ name, tag, region, discordUserId, lastMatchId: null });
   saveData(data);
   return true;
 }
 
-function removeBoundPlayer(name, tag) {
+function removeBoundPlayer(guildId, name, tag) {
   const data = loadData();
-  const index = data.boundPlayers.findIndex(
+  const guild = ensureGuild(data, guildId);
+
+  const index = guild.boundPlayers.findIndex(
     (p) => p.name.toLowerCase() === name.toLowerCase() && p.tag.toLowerCase() === tag.toLowerCase()
   );
   if (index === -1) {
     return false; // Not found
   }
-  data.boundPlayers.splice(index, 1);
+  guild.boundPlayers.splice(index, 1);
   saveData(data);
   return true;
 }
 
-function getBoundPlayers() {
-  return loadData().boundPlayers;
+function getBoundPlayers(guildId) {
+  const data = loadData();
+  if (guildId) {
+    const guild = data.guilds[guildId];
+    return guild ? guild.boundPlayers : [];
+  }
+  // Return all players across all guilds (for polling)
+  const allPlayers = [];
+  for (const [gId, guild] of Object.entries(data.guilds)) {
+    for (const player of guild.boundPlayers) {
+      allPlayers.push({ ...player, guildId: gId });
+    }
+  }
+  return allPlayers;
 }
 
 function updateLastMatchId(name, tag, matchId) {
   const data = loadData();
-  const player = data.boundPlayers.find(
-    (p) => p.name.toLowerCase() === name.toLowerCase() && p.tag.toLowerCase() === tag.toLowerCase()
-  );
-  if (player) {
-    player.lastMatchId = matchId;
-    saveData(data);
+  // Search across all guilds
+  for (const guild of Object.values(data.guilds)) {
+    const player = guild.boundPlayers.find(
+      (p) => p.name.toLowerCase() === name.toLowerCase() && p.tag.toLowerCase() === tag.toLowerCase()
+    );
+    if (player) {
+      player.lastMatchId = matchId;
+      saveData(data);
+      return;
+    }
   }
 }
 
-function setReportChannel(channelId, guildId) {
+function setReportChannel(guildId, channelId) {
   const data = loadData();
-  data.reportChannelId = channelId;
-  data.guildId = guildId;
+  const guild = ensureGuild(data, guildId);
+  guild.reportChannelId = channelId;
   saveData(data);
 }
 
-function getReportChannel() {
+function getReportChannel(guildId) {
   const data = loadData();
-  return { channelId: data.reportChannelId, guildId: data.guildId };
+  const guild = data.guilds[guildId];
+  return guild ? guild.reportChannelId : null;
+}
+
+function getAllGuildsWithReportChannels() {
+  const data = loadData();
+  const result = [];
+  for (const [guildId, guild] of Object.entries(data.guilds)) {
+    if (guild.reportChannelId) {
+      result.push({ guildId, channelId: guild.reportChannelId });
+    }
+  }
+  return result;
 }
 
 module.exports = {
@@ -100,4 +140,5 @@ module.exports = {
   updateLastMatchId,
   setReportChannel,
   getReportChannel,
+  getAllGuildsWithReportChannels,
 };
