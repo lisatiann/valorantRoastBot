@@ -1,7 +1,7 @@
 const valorantApi = require('./valorantApi');
 const dataStore = require('./dataStore');
 
-const POLL_INTERVAL = 1 * 60 * 1000; // 1 minute
+const POLL_INTERVAL = 2 * 60 * 1000; // 2 minutes
 
 let pollTimer = null;
 let onNewMatchCallback = null;
@@ -54,8 +54,8 @@ async function pollAllPlayers() {
       onNewMatchCallback(result.player, result.match);
     }
 
-    // Small delay between API calls to be nice to the API
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Delay between API calls to avoid rate limits
+    await new Promise((resolve) => setTimeout(resolve, 3000));
   }
 }
 
