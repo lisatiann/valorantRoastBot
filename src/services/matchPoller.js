@@ -5,6 +5,7 @@ const POLL_INTERVAL = 2 * 60 * 1000; // 2 minutes
 
 let pollTimer = null;
 let onNewMatchCallback = null;
+const reportedMatches = new Set(); // Track matches already reported this poll cycle
 
 async function checkPlayerForNewMatch(player) {
   try {
@@ -47,11 +48,22 @@ async function pollAllPlayers() {
 
   console.log(`Polling ${players.length} bound player(s) for new matches...`);
 
+  // Clear reported matches at start of each poll cycle
+  reportedMatches.clear();
+
   for (const player of players) {
     const result = await checkPlayerForNewMatch(player);
 
     if (result && onNewMatchCallback) {
-      onNewMatchCallback(result.player, result.match);
+      const matchId = result.match.metadata.matchid;
+
+      // Only report if we haven't already reported this match
+      if (!reportedMatches.has(matchId)) {
+        reportedMatches.add(matchId);
+        onNewMatchCallback(result.player, result.match);
+      } else {
+        console.log(`Skipping duplicate report for match ${matchId} (already reported for another player)`);
+      }
     }
 
     // Delay between API calls to avoid rate limits
