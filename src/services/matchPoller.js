@@ -20,15 +20,15 @@ async function checkPlayerForNewMatch(player) {
 
     // First time checking this player - just store the match ID
     if (!player.lastMatchId) {
-      dataStore.updateLastMatchId(player.name, player.tag, matchId);
-      console.log(`Initialized lastMatchId for ${player.name}#${player.tag}: ${matchId}`);
+      dataStore.updateLastMatchId(player.guildId, player.name, player.tag, matchId);
+      console.log(`Initialized lastMatchId for ${player.name}#${player.tag} in guild ${player.guildId}: ${matchId}`);
       return null;
     }
 
     // Check if this is a new match
     if (matchId !== player.lastMatchId) {
-      dataStore.updateLastMatchId(player.name, player.tag, matchId);
-      console.log(`New match detected for ${player.name}#${player.tag}: ${matchId}`);
+      dataStore.updateLastMatchId(player.guildId, player.name, player.tag, matchId);
+      console.log(`New match detected for ${player.name}#${player.tag} in guild ${player.guildId}: ${matchId}`);
       return { player, match: latestMatch };
     }
 
@@ -56,13 +56,15 @@ async function pollAllPlayers() {
 
     if (result && onNewMatchCallback) {
       const matchId = result.match.metadata.matchid;
+      const guildMatchKey = `${result.player.guildId}:${matchId}`;
 
-      // Only report if we haven't already reported this match
-      if (!reportedMatches.has(matchId)) {
-        reportedMatches.add(matchId);
+      // Only report if we haven't already reported this match FOR THIS GUILD
+      // (same match should be reported to different guilds, but not twice to the same guild)
+      if (!reportedMatches.has(guildMatchKey)) {
+        reportedMatches.add(guildMatchKey);
         onNewMatchCallback(result.player, result.match);
       } else {
-        console.log(`Skipping duplicate report for match ${matchId} (already reported for another player)`);
+        console.log(`Skipping duplicate report for match ${matchId} in guild ${result.player.guildId} (already reported)`);
       }
     }
 

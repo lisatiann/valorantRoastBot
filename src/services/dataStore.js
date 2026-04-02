@@ -92,18 +92,17 @@ function getBoundPlayers(guildId) {
   return allPlayers;
 }
 
-function updateLastMatchId(name, tag, matchId) {
+function updateLastMatchId(guildId, name, tag, matchId) {
   const data = loadData();
-  // Search across all guilds
-  for (const guild of Object.values(data.guilds)) {
-    const player = guild.boundPlayers.find(
-      (p) => p.name.toLowerCase() === name.toLowerCase() && p.tag.toLowerCase() === tag.toLowerCase()
-    );
-    if (player) {
-      player.lastMatchId = matchId;
-      saveData(data);
-      return;
-    }
+  const guild = data.guilds[guildId];
+  if (!guild) return;
+
+  const player = guild.boundPlayers.find(
+    (p) => p.name.toLowerCase() === name.toLowerCase() && p.tag.toLowerCase() === tag.toLowerCase()
+  );
+  if (player) {
+    player.lastMatchId = matchId;
+    saveData(data);
   }
 }
 

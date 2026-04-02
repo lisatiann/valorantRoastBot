@@ -27,8 +27,8 @@ const client = new Client({
   ],
 });
 
-// Helper: Send summary to channel and optionally voice
-async function sendMatchReport(channel, guild, match, playerName) {
+// Helper: Send summary to channel and optionally voice (queued)
+async function sendMatchReport(channel, guild, match, playerName, voiceChannelId = null) {
   console.log(`Generating summary for ${playerName}...`);
   const { summary, selectedPraise, selectedRoast } = generateSummary(match, playerName);
   console.log(`Summary generated, length: ${summary.length}`);
@@ -48,12 +48,70 @@ async function sendMatchReport(channel, guild, match, playerName) {
     console.error('Failed to send text summary:', sendError);
   }
 
-  // If bot is in voice channel, also speak the summary
-  const connection = getVoiceConnection(guild.id);
-  if (connection) {
+  // If we have a voice channel to report to, queue the voice report
+  if (voiceChannelId) {
+    const voiceText = generateVoiceSummary(match, playerName, selectedPraise, selectedRoast);
+    console.log('Queueing TTS for:', voiceText);
+    queueVoiceReport(voiceText, guild, voiceChannelId);
+  }
+}
+
+// Helper: Find voice channel for a specific player (by Discord user ID)
+async function findVoiceChannelForPlayer(guild, discordUserId) {
+  if (!discordUserId) return null;
+
+  try {
+    // Fetch fresh channel data to avoid stale cache
+    const channels = await guild.channels.fetch();
+    for (const [, channel] of channels) {
+      if (channel && channel.isVoiceBased() && channel.members) {
+        if (channel.members.has(discordUserId)) {
+          return channel;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching channels:', error);
+  }
+  return null;
+}
+
+// Voice report queue to prevent concurrent audio playback
+const voiceReportQueue = [];
+let isProcessingVoiceQueue = false;
+
+async function processVoiceQueue() {
+  if (isProcessingVoiceQueue || voiceReportQueue.length === 0) {
+    return;
+  }
+
+  isProcessingVoiceQueue = true;
+  const connectedGuildIds = new Set();
+
+  while (voiceReportQueue.length > 0) {
+    const { voiceText, guild, voiceChannelId } = voiceReportQueue.shift();
+    connectedGuildIds.add(guild.id);
+
     try {
-      const voiceText = generateVoiceSummary(match, playerName, selectedPraise, selectedRoast);
-      console.log('Generating TTS for:', voiceText);
+      // Check if we need to switch voice channels
+      let currentConnection = getVoiceConnection(guild.id);
+
+      if (currentConnection && currentConnection.joinConfig.channelId !== voiceChannelId) {
+        // We're in a different channel, disconnect and rejoin the correct one
+        console.log(`Switching voice channels to ${voiceChannelId}`);
+        currentConnection.destroy();
+        currentConnection = null;
+      }
+
+      if (!currentConnection) {
+        // Join the correct voice channel
+        currentConnection = joinVoiceChannel({
+          channelId: voiceChannelId,
+          guildId: guild.id,
+          adapterCreator: guild.voiceAdapterCreator,
+        });
+        console.log(`Joined voice channel ${voiceChannelId} for queued report`);
+      }
 
       const audioPath = await generateSpeech(voiceText);
       console.log('Audio generated:', audioPath);
@@ -61,39 +119,55 @@ async function sendMatchReport(channel, guild, match, playerName) {
       const player = createAudioPlayer();
       const resource = createAudioResource(audioPath);
 
-      connection.subscribe(player);
+      currentConnection.subscribe(player);
       player.play(resource);
 
-      player.on(AudioPlayerStatus.Idle, () => {
-        cleanupAudioFile(audioPath);
-        connection.destroy();
+      // Wait for playback to complete with timeout (30 seconds max)
+      await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          console.warn('Voice playback timed out after 30s');
+          cleanupAudioFile(audioPath);
+          resolve();
+        }, 30000);
+
+        player.on(AudioPlayerStatus.Idle, () => {
+          clearTimeout(timeout);
+          cleanupAudioFile(audioPath);
+          resolve();
+        });
+
+        player.on('error', (error) => {
+          clearTimeout(timeout);
+          console.error('Audio player error:', error);
+          cleanupAudioFile(audioPath);
+          resolve();
+        });
       });
 
-      player.on('error', (error) => {
-        console.error('Audio player error:', error);
-        cleanupAudioFile(audioPath);
-      });
+      // Small delay between reports
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
     } catch (ttsError) {
-      console.error('TTS error:', ttsError);
+      console.error('TTS error in queue:', ttsError);
     }
   }
+
+  // Disconnect from ALL guilds we connected to
+  for (const guildId of connectedGuildIds) {
+    const connection = getVoiceConnection(guildId);
+    if (connection) {
+      connection.destroy();
+      console.log(`Disconnected from voice in guild ${guildId}`);
+    }
+  }
+
+  isProcessingVoiceQueue = false;
 }
 
-// Helper: Find voice channel with bound player in specific guild
-function findVoiceChannelWithBoundPlayer(guild) {
-  const boundPlayers = dataStore.getBoundPlayers(guild.id);
-  const boundDiscordIds = boundPlayers.map((p) => p.discordUserId).filter(Boolean);
-
-  for (const [, channel] of guild.channels.cache) {
-    if (channel.isVoiceBased() && channel.members) {
-      for (const [memberId] of channel.members) {
-        if (boundDiscordIds.includes(memberId)) {
-          return channel;
-        }
-      }
-    }
-  }
-  return null;
+// Queue a voice report and process
+function queueVoiceReport(voiceText, guild, voiceChannelId) {
+  voiceReportQueue.push({ voiceText, guild, voiceChannelId });
+  processVoiceQueue();
 }
 
 // Bot ready event
@@ -121,21 +195,15 @@ client.once('ready', () => {
         return;
       }
 
-      // Check if a bound player is in a voice channel, auto-join if so
-      const voiceChannel = findVoiceChannelWithBoundPlayer(guild);
-      if (voiceChannel) {
-        const existingConnection = getVoiceConnection(guild.id);
-        if (!existingConnection) {
-          joinVoiceChannel({
-            channelId: voiceChannel.id,
-            guildId: guild.id,
-            adapterCreator: guild.voiceAdapterCreator,
-          });
-          console.log(`Auto-joined voice channel: ${voiceChannel.name}`);
-        }
+      // Check if THE PLAYER WHO PLAYED is in a voice channel
+      const voiceChannel = await findVoiceChannelForPlayer(guild, player.discordUserId);
+      const voiceChannelId = voiceChannel ? voiceChannel.id : null;
+
+      if (voiceChannelId) {
+        console.log(`Player ${player.name} is in voice channel: ${voiceChannel.name}`);
       }
 
-      await sendMatchReport(channel, guild, match, player.name);
+      await sendMatchReport(channel, guild, match, player.name, voiceChannelId);
     } catch (error) {
       console.error('Error sending auto match report:', error);
     }
@@ -146,6 +214,11 @@ client.once('ready', () => {
 client.on('voiceStateUpdate', (oldState, newState) => {
   // Player joined a voice channel
   if (!oldState.channel && newState.channel) {
+    // Don't auto-join if voice queue is currently processing (would conflict)
+    if (isProcessingVoiceQueue) {
+      return;
+    }
+
     const boundPlayers = dataStore.getBoundPlayers(newState.guild.id);
     const isBoundPlayer = boundPlayers.some((p) => p.discordUserId === newState.id);
 
@@ -167,6 +240,9 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 client.on('messageCreate', async (message) => {
   // Ignore bot messages
   if (message.author.bot) return;
+
+  // Ignore DMs - commands only work in guilds
+  if (!message.guild) return;
 
   // Test command - responds in Chinese
   if (message.content === '^test') {
@@ -212,13 +288,31 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
-    const name = args.slice(0, hashIndex);
+    const name = args.slice(0, hashIndex).trim();
     const rest = args.slice(hashIndex + 1).split(' ');
-    const tag = rest[0];
-    const region = (rest[1] || 'ap').toLowerCase();
+    const tag = rest[0].trim();
+    const region = (rest[1] || 'na').toLowerCase();
+
+    if (!name || !tag) {
+      await message.reply('格式错误！玩家名和TAG不能为空。\n例如: `^bind TenZ#0505 na`');
+      return;
+    }
 
     if (!VALID_REGIONS.includes(region)) {
       await message.reply(`无效地区！可用地区: ${VALID_REGIONS.join(', ')}`);
+      return;
+    }
+
+    // Verify player exists before binding
+    await message.reply(`正在验证玩家 ${name}#${tag}...`);
+    try {
+      const matchData = await valorantApi.getMatches(region, name, tag);
+      if (!matchData.data) {
+        await message.reply(`未找到玩家 ${name}#${tag}，请检查玩家名、TAG和地区是否正确。`);
+        return;
+      }
+    } catch (error) {
+      await message.reply(`验证玩家失败: ${error.message}\n请检查玩家名、TAG和地区是否正确。`);
       return;
     }
 
@@ -295,10 +389,15 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
-    const name = args.slice(0, hashIndex);
+    const name = args.slice(0, hashIndex).trim();
     const rest = args.slice(hashIndex + 1).split(' ');
-    const tag = rest[0];
+    const tag = rest[0].trim();
     const region = (rest[1] || 'na').toLowerCase();
+
+    if (!name || !tag) {
+      await message.reply('格式错误！玩家名和TAG不能为空。\n例如: `^val alcoholicboba#42069 na`');
+      return;
+    }
 
     if (!VALID_REGIONS.includes(region)) {
       await message.reply(`无效地区！可用地区: ${VALID_REGIONS.join(', ')}`);
@@ -317,7 +416,12 @@ client.on('messageCreate', async (message) => {
 
       // Get the most recent match
       const latestMatch = matchData.data[0];
-      await sendMatchReport(message.channel, message.guild, latestMatch, name);
+
+      // Check if user is in a voice channel for voice report
+      const userVoiceChannel = message.member?.voice.channel;
+      const voiceChannelId = userVoiceChannel ? userVoiceChannel.id : null;
+
+      await sendMatchReport(message.channel, message.guild, latestMatch, name, voiceChannelId);
     } catch (error) {
       console.error('Valorant API error:', error);
       await message.reply(`获取数据失败: ${error.message}`);
