@@ -5,7 +5,7 @@ const POLL_INTERVAL = 2 * 60 * 1000; // 2 minutes
 
 let pollTimer = null;
 let onNewMatchCallback = null;
-const reportedMatches = new Set(); // Track matches already reported this poll cycle
+const reportedMatches = new Set(); // Track matches already reported per guild (persists across polls)
 
 async function pollAllPlayers() {
   const allPlayers = await dataStore.getBoundPlayers();
@@ -40,8 +40,9 @@ async function pollAllPlayers() {
 
   console.log(`Polling ${uniquePlayers.size} unique player(s) across ${allPlayers.length} binding(s)...`);
 
-  // Clear reported matches at start of each poll cycle
-  reportedMatches.clear();
+  // Collect all matches found in this poll cycle
+  // Key: guildId:matchId -> { match, players: [{name, discordUserId}] }
+  const matchesToReport = new Map();
 
   for (const [, playerData] of uniquePlayers) {
     try {
@@ -68,28 +69,30 @@ async function pollAllPlayers() {
 
         // Check if this is a new match for this guild
         if (matchId !== guildInfo.lastMatchId) {
-          // Skip if already reported this match for this guild
+          // Update this player's lastMatchId
+          await dataStore.updateLastMatchId(guildId, playerData.name, playerData.tag, matchId);
+
+          // Skip if already reported this match for this guild (in a previous poll)
           if (reportedMatches.has(guildMatchKey)) {
+            console.log(`Match ${matchId} already reported for guild ${guildId}, skipping`);
             continue;
           }
 
-          await dataStore.updateLastMatchId(guildId, playerData.name, playerData.tag, matchId);
-          reportedMatches.add(guildMatchKey);
-
-          console.log(`New match detected for ${playerData.name}#${playerData.tag} in guild ${guildId}: ${matchId}`);
-
-          if (onNewMatchCallback) {
-            onNewMatchCallback(
-              {
-                name: playerData.name,
-                tag: playerData.tag,
-                region: playerData.region,
-                guildId: guildId,
-                discordUserId: guildInfo.discordUserId,
-              },
-              latestMatch
-            );
+          // Collect this match for reporting (group players in same match)
+          if (!matchesToReport.has(guildMatchKey)) {
+            matchesToReport.set(guildMatchKey, {
+              match: latestMatch,
+              matchId: matchId,
+              guildId: guildId,
+              players: [],
+            });
           }
+          matchesToReport.get(guildMatchKey).players.push({
+            name: playerData.name,
+            tag: playerData.tag,
+            region: playerData.region,
+            discordUserId: guildInfo.discordUserId,
+          });
         }
       }
     } catch (error) {
@@ -98,6 +101,39 @@ async function pollAllPlayers() {
 
     // Delay between API calls to avoid rate limits
     await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+
+  // Now report each unique match once per guild
+  for (const [guildMatchKey, matchInfo] of matchesToReport) {
+    // Mark as reported
+    reportedMatches.add(guildMatchKey);
+
+    // Pick the first player to report for (they're all in the same match)
+    const primaryPlayer = matchInfo.players[0];
+
+    console.log(`New match detected: ${matchInfo.matchId} in guild ${matchInfo.guildId}`);
+    console.log(`  Players in this match: ${matchInfo.players.map(p => p.name).join(', ')}`);
+
+    if (onNewMatchCallback) {
+      onNewMatchCallback(
+        {
+          name: primaryPlayer.name,
+          tag: primaryPlayer.tag,
+          region: primaryPlayer.region,
+          guildId: matchInfo.guildId,
+          discordUserId: primaryPlayer.discordUserId,
+          // Include all players in match for potential future use
+          allPlayersInMatch: matchInfo.players,
+        },
+        matchInfo.match
+      );
+    }
+  }
+
+  // Clean up old reported matches (keep last 100 to prevent memory leak)
+  if (reportedMatches.size > 100) {
+    const toDelete = Array.from(reportedMatches).slice(0, reportedMatches.size - 100);
+    toDelete.forEach(key => reportedMatches.delete(key));
   }
 }
 
