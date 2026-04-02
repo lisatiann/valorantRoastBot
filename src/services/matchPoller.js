@@ -1,7 +1,7 @@
 const valorantApi = require('./valorantApi');
 const dataStore = require('./dataStore');
 
-const POLL_INTERVAL = 2 * 60 * 1000; // 2 minutes
+const POLL_INTERVAL = 1 * 60 * 1000; // 1 minute
 
 let pollTimer = null;
 let onNewMatchCallback = null;
