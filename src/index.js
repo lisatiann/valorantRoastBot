@@ -309,23 +309,41 @@ client.on('messageCreate', async (message) => {
     await message.reply('已离开语音频道！');
   }
 
-  // Bind player command: ^bind PlayerName#TAG region
+  // Bind player command: ^bind PlayerName#TAG region [@DiscordUser]
   if (message.content.startsWith('^bind ')) {
     const args = message.content.slice('^bind '.length).trim();
     const hashIndex = args.indexOf('#');
 
     if (hashIndex === -1) {
-      await message.reply('格式错误！请使用: `^bind 玩家名#TAG 地区`\n例如: `^bind TenZ#0505 na`');
+      await message.reply('格式错误！请使用: `^bind 玩家名#TAG 地区 [@Discord用户]`\n例如: `^bind TenZ#0505 na` 或 `^bind TenZ#0505 na @friend`');
       return;
     }
 
     const name = args.slice(0, hashIndex).trim();
-    const rest = args.slice(hashIndex + 1).split(' ');
-    const tag = rest[0].trim();
-    const region = (rest[1] || 'na').toLowerCase();
+    const rest = args.slice(hashIndex + 1).split(' ').filter(s => s.trim());
+    const tag = rest[0]?.trim();
+
+    // Parse region and optional mention
+    let region = 'na';
+    let targetUserId = message.author.id; // Default to command author
+
+    // Check for mentioned user
+    const mentionedUser = message.mentions.users.first();
+    if (mentionedUser) {
+      targetUserId = mentionedUser.id;
+    }
+
+    // Find region (it's the part that's not a mention)
+    for (let i = 1; i < rest.length; i++) {
+      const part = rest[i].trim();
+      if (!part.startsWith('<@') && VALID_REGIONS.includes(part.toLowerCase())) {
+        region = part.toLowerCase();
+        break;
+      }
+    }
 
     if (!name || !tag) {
-      await message.reply('格式错误！玩家名和TAG不能为空。\n例如: `^bind TenZ#0505 na`');
+      await message.reply('格式错误！玩家名和TAG不能为空。\n例如: `^bind TenZ#0505 na` 或 `^bind TenZ#0505 na @friend`');
       return;
     }
 
@@ -347,9 +365,10 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
-    const added = await dataStore.addBoundPlayer(message.guild.id, name, tag, region, message.author.id);
+    const added = await dataStore.addBoundPlayer(message.guild.id, name, tag, region, targetUserId);
     if (added) {
-      await message.reply(`已绑定玩家: ${name}#${tag} (${region})\n机器人将自动追踪该玩家的比赛。`);
+      const targetName = mentionedUser ? `<@${targetUserId}>` : '你';
+      await message.reply(`已绑定玩家: ${name}#${tag} (${region}) → ${targetName}\n机器人将自动追踪该玩家的比赛。`);
     } else {
       await message.reply(`玩家 ${name}#${tag} 已经被绑定了！`);
     }
@@ -394,7 +413,8 @@ client.on('messageCreate', async (message) => {
     } else {
       response += '**绑定玩家:**\n';
       players.forEach((p, i) => {
-        response += `${i + 1}. ${p.name}#${p.tag} (${p.region})\n`;
+        const discordLink = p.discordUserId ? `<@${p.discordUserId}>` : '未知';
+        response += `${i + 1}. ${p.name}#${p.tag} (${p.region}) → ${discordLink}\n`;
       });
     }
 
