@@ -52,7 +52,31 @@ async function pollAllPlayers() {
         continue;
       }
 
-      const latestMatch = matchData.data[0];
+      // Find the latest competitive or unrated match (skip deathmatch, etc.)
+      const ALLOWED_MODES = ['competitive', 'unrated'];
+      let latestMatch = null;
+
+      // Log all recent match modes for debugging
+      console.log(`[MODE-CHECK] Recent matches for ${playerData.name}#${playerData.tag}:`);
+      for (const match of matchData.data.slice(0, 5)) {
+        const mode = match.metadata?.mode;
+        console.log(`  - ${match.metadata?.matchid?.slice(0, 8)}... mode: "${mode}"`);
+      }
+
+      for (const match of matchData.data) {
+        const mode = match.metadata?.mode?.toLowerCase();
+        if (ALLOWED_MODES.includes(mode)) {
+          latestMatch = match;
+          console.log(`[MODE-CHECK] Selected match with mode: "${mode}"`);
+          break;
+        }
+      }
+
+      if (!latestMatch) {
+        console.log(`[MODE-CHECK] No allowed mode matches found, skipping`);
+        continue;
+      }
+
       const matchId = latestMatch.metadata.matchid;
 
       // Check each guild this player is bound in
